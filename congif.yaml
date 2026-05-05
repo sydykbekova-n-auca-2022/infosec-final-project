@@ -1,0 +1,103 @@
+# ============================================================
+# IDS Configuration
+# Tune detection rules without editing code.
+# ============================================================
+
+# ---------- Shared ----------
+
+# Path to persistent alert log (relative paths resolved against project dir)
+alert_log: alerts.log
+
+# Console verbosity: DEBUG / INFO / WARNING / ERROR / CRITICAL
+console_level: INFO
+
+
+# ---------- Auth Monitor ----------
+
+auth:
+  # Path to the auth log to tail
+  log_path: /var/log/auth.log
+
+  # Per-IP brute-force detection
+  ip_window_seconds: 60       # rolling window
+  ip_threshold: 5             # failures from one IP within window -> alert
+
+  # Per-user brute-force detection (catches distributed attacks)
+  user_window_seconds: 300    # 5 minutes
+  user_threshold: 10          # failures targeting one username -> alert
+
+  # Re-arming: minimum gap between repeat alerts on the same key
+  cooldown_seconds: 600       # 10 minutes
+
+  # High-value usernames — extra-suspicious if attempted
+  sensitive_users:
+    - root
+    - admin
+    - administrator
+    - oracle
+    - postgres
+    - ubuntu
+
+
+# ---------- Process Monitor ----------
+
+process:
+  # Seconds between snapshots
+  poll_seconds: 3
+
+  # Sustained-usage anomaly window
+  resource_window_seconds: 30
+  cpu_threshold_percent: 80      # process > this % CPU sustained -> alert
+  memory_threshold_mb: 500       # process > this MB RSS sustained -> alert
+
+  # Process name blocklist (matched against proc.name())
+  process_blocklist:
+    - nc
+    - ncat
+    - netcat
+    - nmap
+    - masscan
+    - tcpdump
+    - tshark
+    - wireshark
+    - socat
+    - chisel
+    - ngrok
+    - msfconsole
+    - meterpreter
+    - hydra
+    - john
+    - hashcat
+    - mimikatz
+
+  # Regex patterns matched against the full process command line.
+  # Designed to catch reverse shells, in-memory payloads, and obfuscation.
+  cmdline_patterns:
+    - 'bash\s+-i'                       # interactive bash (reverse shell)
+    - '/dev/tcp/'                       # bash network redirection
+    - 'sh\s+-i'
+    - 'python3?\s+-c\s+.*socket'        # python -c with socket import
+    - 'perl\s+-e\s+.*socket'
+    - 'nc\s+.*-e'                       # nc with -e (exec) flag
+    - 'curl\s+.*\|\s*(sh|bash)'         # curl piped to shell
+    - 'wget\s+.*\|\s*(sh|bash)'         # wget piped to shell
+    - 'base64\s+-d\s*\|\s*(sh|bash)'    # base64-decoded shell payload
+
+  # Re-arming cooldown for repeated alerts on the same PID/key
+  cooldown_seconds: 300
+
+  # Trusted parent processes for root-owned children (anything else flagged)
+  trusted_root_parents:
+    - init
+    - systemd
+    - sshd
+    - cron
+    - kthreadd
+    - dbus-daemon
+    - login
+    - agetty
+    - gdm
+    - gdm-session-worker
+    - kernel
+    - NetworkManager
+    - polkitd
