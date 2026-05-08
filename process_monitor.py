@@ -7,6 +7,7 @@ Polls running processes via psutil and detects:
   - Suspicious command lines (regex patterns: reverse shells, obfuscation)
   - Privilege anomalies (root processes spawned by untrusted parents)
   - Sustained resource anomalies (high CPU / memory)
+  - Suspicious network connections (outbound from shells/Python/nc to external IPs)
 With persistent logging and per-key cooldowns.
 """
 
@@ -201,6 +202,51 @@ class ProcessDetector:
                 )
                 self._mark(key, now)
 
+    def check_network_connections(self, proc, info, now):
+        """Check for suspicious network connections from suspicious processes."""
+        # Only check certain suspicious process names/patterns for performance
+        suspicious_names = {"bash", "sh", "python3", "python", "perl", "nc", "ncat", "socat"}
+        if info["name"] not in suspicious_names:
+            return
+
+        try:
+            connections = proc.net_connections(kind='inet')
+        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            return
+
+        for conn in connections:
+            # Flag ESTABLISHED outbound connections to external IPs on high ports (classic reverse shell)
+            if conn.status == 'ESTABLISHED' and conn.laddr and conn.raddr:
+                local_ip = conn.laddr.ip
+                remote_ip = conn.raddr.ip
+                remote_port = conn.raddr.port
+
+                # Skip localhost and private networks
+                if self._is_internal_ip(remote_ip):
+                    continue
+
+                # Flag high-port connections (>10000) from bash/sh/python/nc — classic reverse shell
+                if info["name"] in {"bash", "sh", "python3", "python", "nc", "ncat", "socat"} and remote_port > 1024:
+                    key = ("network", info["pid"], remote_ip, remote_port)
+                    if self._can_alert(key, now):
+                        self.log.critical(
+                            f"SUSPICIOUS OUTBOUND CONNECTION: pid={info['pid']} name={info['name']} "
+                            f"user={info['username']} → {remote_ip}:{remote_port} "
+                            f"cmdline={info['cmdline']!r}"
+                        )
+                        self._mark(key, now)
+
+    def _is_internal_ip(self, ip):
+        """Check if IP is localhost or private network."""
+        private_ranges = [
+            "127.",           # localhost
+            "10.",            # 10.0.0.0/8
+            "172.16.",        # 172.16.0.0/12
+            "192.168.",       # 192.168.0.0/16
+            "169.254.",       # link-local
+        ]
+        return any(ip.startswith(range_prefix) for range_prefix in private_ranges)
+
     # --- main snapshot loop ---
 
     def snapshot(self):
@@ -229,6 +275,9 @@ class ProcessDetector:
 
             # Resource checks run on every snapshot for every live process
             self.check_resource_anomaly(proc, info, now)
+            
+            # Network connection checks for suspicious processes
+            self.check_network_connections(proc, info, now)
 
         # Garbage-collect dead PIDs
         dead = set(self.known_pids) - current_pids
