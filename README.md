@@ -186,24 +186,202 @@ infosec-final/
 
 **Required:**
 
-- **Python 3.10+** (3.12 recommended)
-- **Linux host** — Ubuntu 24.04 LTS recommended, ARM64 or AMD64.
+- **Python 3.10+** (3.12 recommended, tested on Python 3.12.3)
+- **Linux host** — Ubuntu 24.04 LTS recommended (tested on ARM64 and AMD64).
+- `sudo` access (required for installing system packages and running auth monitor).
 - `git` for cloning.
 
 **Strongly recommended for verification:**
 
-- A **second machine** (or your host OS) on the same network as the lab VM, to generate failed SSH logins.
+- A **second machine** (or your host OS) on the same network, to generate failed SSH logins for testing.
 
-### Installation Steps
+### Step-by-Step Installation
 
-#### 1. Clone the repository
+#### Step 1: Clone the Repository
 
 ```bash
-git clone https://github.com//infosec-final.git
-cd infosec-final
+git clone https://github.com/sydykbekova-n-auca-2022/infosec-final-project.git
+cd infosec-final-project
 ```
 
-#### 2. Set up the Python virtual environment
+#### Step 2: Install System Dependencies
+
+Ubuntu 24.04 LTS requires a few system packages to be installed. Run these commands:
+
+```bash
+# Update package lists
+sudo apt update
+
+# Install Python virtual environment support
+sudo apt install -y python3.12-venv
+
+# Install SSH server (required for auth events to detect)
+sudo apt install -y openssh-server
+
+# Install rsyslog (ensures /var/log/auth.log is populated)
+sudo apt install -y rsyslog
+
+# Enable and start services
+sudo systemctl enable --now ssh
+sudo systemctl enable --now rsyslog
+```
+
+**Why each is needed:**
+
+- `python3.12-venv` — required to create isolated Python environments without pip
+- `openssh-server` — generates authentication events in `/var/log/auth.log`
+- `rsyslog` — ensures traditional syslog is writing to `/var/log/auth.log` (some Ubuntu installs default to journald only)
+
+#### Step 3: Create Python Virtual Environment
+
+From the project directory:
+
+```bash
+python3 -m venv venv
+```
+
+This creates an isolated `venv/` directory with its own Python installation.
+
+#### Step 4: Activate Virtual Environment and Install Dependencies
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+**Expected output:**
+
+```text
+Collecting psutil
+  ...
+Collecting PyYAML
+  ...
+Successfully installed PyYAML-6.0.3 psutil-7.2.2
+```
+
+The `requirements.txt` file contains:
+
+```text
+psutil
+PyYAML
+```
+
+These are the only two external dependencies needed.
+
+#### Step 5: Verify Installation
+
+Test that the virtual environment is properly configured:
+
+```bash
+which python3
+# Should output: /path/to/your/infosec-final/venv/bin/python3
+
+python3 -c "import psutil, yaml; print('Success!')"
+# Should output: Success!
+```
+
+### Running the Application
+
+#### Option A — One-Command Startup (Recommended)
+
+From the project directory:
+
+```bash
+./run_all.sh
+```
+
+This script:
+1. Verifies the `venv/` directory exists
+2. Starts `auth_monitor.py` with sudo (needed for `/var/log/auth.log`)
+3. Starts `process_monitor.py` in the foreground
+4. Tails `alerts.log` so you see alerts in real time
+
+Press `Ctrl+C` to stop everything cleanly.
+
+**Expected output:**
+
+```text
+Starting auth_monitor.py (sudo)...
+Starting process_monitor.py...
+Both monitors running. Tailing alerts.log (Ctrl+C to stop everything).
+----
+2026-05-08 14:36:28 [WARNING ] [proc] SUSTAINED HIGH MEMORY: pid=4284 name=node avg=760MB over 30s user=nur ...
+2026-05-08 14:38:32 [INFO    ] [auth] Watching /var/log/auth.log
+2026-05-08 14:38:32 [INFO    ] [proc] Process monitor started
+2026-05-08 14:38:32 [INFO    ] [proc] Baseline established with 219 existing processes
+```
+
+#### Option B — Manual Startup (For Development/Debugging)
+
+Open three separate terminals in the project directory:
+
+**Terminal 1 — Auth Monitor (requires sudo):**
+
+```bash
+cd /path/to/infosec-final
+source venv/bin/activate
+sudo venv/bin/python3 auth_monitor.py
+```
+
+`sudo` is required because `/var/log/auth.log` is only readable by root. Using the full `venv/bin/python3` path ensures sudo runs the correct Python interpreter with PyYAML available.
+
+**Terminal 2 — Process Monitor:**
+
+```bash
+cd /path/to/infosec-final
+source venv/bin/activate
+python3 process_monitor.py
+```
+
+**Terminal 3 — Watch Alerts:**
+
+```bash
+cd /path/to/infosec-final
+tail -f alerts.log
+```
+
+### Configuration
+
+All behavior is tuned via `config.yaml`. Edit it to customize:
+
+- **Alert thresholds** — how many failed logins trigger an alert
+- **Time windows** — how long to track failed attempts
+- **Process blocklists** — which binaries to flag as suspicious
+- **Regex patterns** — command-line signatures to match (reverse shells, etc.)
+- **Resource limits** — CPU and memory thresholds
+- **Cooldown periods** — how long to suppress repeat alerts on the same key
+
+**Example: Relax detection during testing**
+
+```yaml
+auth:
+  ip_threshold: 3              # Alert after 3 failed logins (default 5)
+  ip_window_seconds: 30        # Check last 30 seconds (default 60)
+  cooldown_seconds: 30         # Repeat alerts every 30s (default 600)
+
+process:
+  cpu_threshold_percent: 50    # Alert if avg CPU > 50% (default 80)
+  memory_threshold_mb: 300     # Alert if avg memory > 300MB (default 500)
+
+console_level: DEBUG           # Show DEBUG+ messages (default INFO)
+```
+
+After editing `config.yaml`, restart the affected monitor(s) for changes to take effect — no code recompilation needed.
+
+### Troubleshooting
+
+#### "ModuleNotFoundError: No module named 'psutil'" or 'yaml'
+
+**Solution:** Ensure you've activated the virtual environment and installed requirements:
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### "venv/ not found" when running `./run_all.sh`
+
+**Solution:** Create the virtual environment:
 
 ```bash
 python3 -m venv venv
@@ -211,84 +389,76 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-#### 3. Ensure auth.log is being written
+#### "sudo: venv/bin/python3: command not found"
 
-Ubuntu 24.04 Desktop sometimes ships without traditional syslog. To guarantee the auth log exists:
-
-```bash
-sudo apt install -y rsyslog
-sudo systemctl enable --now rsyslog
-```
-
-#### 4. Ensure SSH server is running
-
-Required so the auth monitor has events to detect:
+**Solution:** This usually means you're not in the project directory. Run from the correct location:
 
 ```bash
-sudo apt install -y openssh-server
-sudo systemctl enable --now ssh
-```
-
-### Running the Application
-
-#### Option A — Manual Startup (three-terminal approach, recommended for development)
-
-**Terminal 1 — auth monitor:**
-
-```bash
+cd /path/to/infosec-final
 sudo venv/bin/python3 auth_monitor.py
 ```
 
-`sudo` is required because `/var/log/auth.log` is root-readable. The explicit `venv/bin/python3` path ensures `sudo` runs the virtual-environment Python (with `pyyaml` available) rather than the system Python.
+Or use the full absolute path:
 
-Expected output:
+```bash
+sudo /home/username/path/to/infosec-final/venv/bin/python3 /home/username/path/to/infosec-final/auth_monitor.py
+```
+
+#### "ERROR: Could not open requirements file"
+
+**Solution:** Ensure `requirements.txt` exists in the project directory. It should contain:
 
 ```text
-2026-05-05 15:00:01 [INFO    ] [auth] Watching /var/log/auth.log
-2026-05-05 15:00:01 [INFO    ] [auth] Rules: per-IP 5 fails / 60s | per-user 10 fails / 300s | cooldown 600s
-2026-05-05 15:00:01 [INFO    ] [auth] Alerts also written to /home//infosec-final/alerts.log
+psutil
+PyYAML
 ```
 
-**Terminal 2 — process monitor:**
+If it doesn't exist, create it:
 
 ```bash
-venv/bin/python3 process_monitor.py
+cat > requirements.txt << 'EOF'
+psutil
+PyYAML
+EOF
 ```
 
-**Terminal 3 — watch alerts:**
+Then install:
 
 ```bash
-tail -f alerts.log
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
-#### Option B — One-Command Startup
+#### "The virtual environment was not created successfully because ensurepip is not available"
+
+**Solution:** Install `python3.12-venv`:
 
 ```bash
-./run_all.sh
+sudo apt install -y python3.12-venv
+python3 -m venv venv
 ```
 
-Launches both monitors as background jobs and tails `alerts.log` in the foreground. Press `Ctrl+C` to stop everything cleanly.
+#### Auth monitor shows no events
 
-### Configuration Options
+**Solution:** Verify syslog is running:
 
-All behaviour is tuned in `config.yaml`. Quick examples:
-
-```yaml
-# Relax per-IP detection during testing
-auth:
-  ip_threshold: 3
-  ip_window_seconds: 30
-  cooldown_seconds: 30
-
-# Tighten resource-anomaly thresholds
-process:
-  cpu_threshold_percent: 50
-  resource_window_seconds: 15
-
-console_level: DEBUG
+```bash
+sudo systemctl status rsyslog
+sudo systemctl start rsyslog
 ```
 
-After editing, restart the affected monitor for changes to take effect.
+And check that auth.log exists:
+
+```bash
+ls -la /var/log/auth.log
+```
+
+If it doesn't exist, rsyslog may not be configured to log auth events. Reinstall and restart:
+
+```bash
+sudo apt install --reinstall rsyslog
+sudo systemctl restart rsyslog
+```
 
 ## Detection Rules Reference
 
