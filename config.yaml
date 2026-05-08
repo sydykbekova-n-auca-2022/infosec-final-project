@@ -21,7 +21,7 @@ auth:
 
   # Per-IP brute-force detection
   ip_window_seconds: 60       # rolling window
-  ip_threshold: 5             # failures from one IP within window -> alert
+  ip_threshold: 3             # failures from one IP within window -> alert
 
   # Per-user brute-force detection (catches distributed attacks)
   user_window_seconds: 300    # 5 minutes
