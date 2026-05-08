@@ -276,8 +276,8 @@ Test that the virtual environment is properly configured:
 which python3
 # Should output: /path/to/your/infosec-final/venv/bin/python3
 
-python3 -c "import psutil, yaml; print('Success!')"
-# Should output: Success!
+python3 -c "import psutil, yaml; print('Success')"
+# Should output: Success
 ```
 
 ### Running the Application
@@ -303,13 +303,15 @@ Press `Ctrl+C` to stop everything cleanly.
 ```text
 Starting auth_monitor.py (sudo)...
 Starting process_monitor.py...
-Both monitors running. Tailing alerts.log (Ctrl+C to stop everything).
+Both monitors running. Showing CRITICAL and WARNING alerts (Ctrl+C to stop everything).
 ----
 2026-05-08 14:36:28 [WARNING ] [proc] SUSTAINED HIGH MEMORY: pid=4284 name=node avg=760MB over 30s user=nur ...
+2026-05-08 14:37:59 [WARNING ] [proc] ROOT PROCESS WITH UNTRUSTED PARENT: pid=7045 name=apt parent=sudo(7044) ...
 2026-05-08 14:38:32 [INFO    ] [auth] Watching /var/log/auth.log
 2026-05-08 14:38:32 [INFO    ] [proc] Process monitor started
-2026-05-08 14:38:32 [INFO    ] [proc] Baseline established with 219 existing processes
 ```
+
+Note: The script now filters to show **only CRITICAL and WARNING** alerts for a cleaner output. All INFO messages are suppressed from the tail output, though they're still logged to `alerts.log`.
 
 #### Option B — Manual Startup (For Development/Debugging)
 
@@ -367,6 +369,62 @@ console_level: DEBUG           # Show DEBUG+ messages (default INFO)
 ```
 
 After editing `config.yaml`, restart the affected monitor(s) for changes to take effect — no code recompilation needed.
+
+### Viewing Logs and Alerts
+
+#### View IDS Alerts
+
+**Watch alerts in real-time (CRITICAL and WARNING only):**
+
+```bash
+tail -f alerts.log | grep -E "CRITICAL|WARNING"
+```
+
+**View last 20 alerts:**
+
+```bash
+tail -20 alerts.log
+```
+
+**View all CRITICAL alerts:**
+
+```bash
+grep "CRITICAL" alerts.log
+```
+
+**Search for a specific alert type:**
+
+```bash
+grep "BRUTE-FORCE\|BLOCKLISTED" alerts.log
+```
+
+#### View SSH Failed Login Attempts
+
+**Show all failed SSH logins (from auth.log):**
+
+```bash
+grep -a "Failed password" /var/log/auth.log
+```
+
+**Show last 20 failed attempts:**
+
+```bash
+grep -a "Failed password" /var/log/auth.log | tail -20
+```
+
+**Show successful logins:**
+
+```bash
+grep -a "Accepted password" /var/log/auth.log | tail -20
+```
+
+**Count failed attempts by IP:**
+
+```bash
+grep -a "Failed password" /var/log/auth.log | grep -oE "from [^ ]+" | sort | uniq -c | sort -rn
+```
+
+**Note:** Use the `-a` flag because `/var/log/auth.log` contains some binary characters. Without it, grep will report "binary file matches" and not show the lines.
 
 ### Troubleshooting
 
@@ -459,6 +517,37 @@ If it doesn't exist, rsyslog may not be configured to log auth events. Reinstall
 sudo apt install --reinstall rsyslog
 sudo systemctl restart rsyslog
 ```
+
+#### "grep: /var/log/auth.log: binary file matches"
+
+**Solution:** The auth.log file contains some binary characters. Use the `-a` (text mode) flag:
+
+```bash
+grep -a "Failed password" /var/log/auth.log
+```
+
+Or with other filters:
+
+```bash
+grep -a "Failed password" /var/log/auth.log | tail -20
+grep -a "Accepted password" /var/log/auth.log | tail -10
+```
+
+#### Console output is too noisy with INFO messages
+
+**Solution:** By default, `./run_all.sh` filters to show only CRITICAL and WARNING alerts. If you want to suppress even more, set the console level in `config.yaml`:
+
+```yaml
+console_level: WARNING
+```
+
+Or to see only CRITICAL alerts:
+
+```yaml
+console_level: CRITICAL
+```
+
+Then restart the monitors. All events are still logged to `alerts.log` regardless of console level — this only affects what's printed to the terminal.
 
 ## Detection Rules Reference
 
