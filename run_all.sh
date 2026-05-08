@@ -33,7 +33,7 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo "Both monitors running. Tailing alerts.log (Ctrl+C to stop everything)."
+echo "Both monitors running. Showing CRITICAL and WARNING alerts (Ctrl+C to stop everything)."
 echo "----"
 touch alerts.log
-tail -f alerts.log
+tail -f alerts.log | grep -E "CRITICAL|WARNING"
