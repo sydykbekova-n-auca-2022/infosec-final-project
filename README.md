@@ -17,6 +17,7 @@ A host-based intrusion detection system (HIDS) written in Python. Continuously m
 - [Architecture Overview](#architecture-overview)
 - [Tech Stack](#tech-stack)
 - [Setup & Run](#setup--run-instructions)
+- [Testing with Two Machines](#testing-with-two-machines)
 - [Screenshots](#screenshots--diagrams)
 
 ## Project Description
@@ -74,13 +75,12 @@ flowchart TD
 - **Ubuntu 24.04 LTS** — test environment
 - **OpenSSH + rsyslog** — auth log source
 
-## Setup & Run Instructions
+## Setup and Run Instructions
 
 ### Prerequisites
 - **Python 3.10+** (tested 3.12.3)
 - **Ubuntu 24.04 LTS** (or similar Linux)
-- `sudo` access
-- `git`
+- `sudo` access and `git`
 
 ### Installation (5 minutes)
 
@@ -140,37 +140,12 @@ Edit `config.yaml` to tune detection (no code changes needed):
 auth:
   ip_threshold: 3              # Alert after N failed logins (default: 5)
   ip_window_seconds: 30        # Within N seconds (default: 60)
-  cooldown_seconds: 30         # Repeat alert every N seconds (default: 600)
 
 process:
   cpu_threshold_percent: 50    # Alert if avg CPU > N% (default: 80)
   memory_threshold_mb: 300     # Alert if avg mem > N MB (default: 500)
 
 console_level: DEBUG           # Show DEBUG+ on console (default: INFO)
-```
-
-Restart monitors to apply changes.
-
-### Quick Test
-
-While `./run_all.sh` is running, open another terminal:
-
-```bash
-# Trigger BLOCKLISTED BINARY alert
-nc -h
-
-# Trigger BRUTE-FORCE alert (6 failed SSH attempts)
-for i in {1..6}; do
-  ssh -o ConnectTimeout=2 nur@localhost 2>&1 && sleep 1
-done
-
-# Trigger SUSPICIOUS CMDLINE alert
-bash -i
-exit
-
-# View alerts
-grep "CRITICAL\|WARNING" alerts.log
-tail -f alerts.log
 ```
 
 ### Troubleshooting
@@ -183,27 +158,126 @@ tail -f alerts.log
 | `No auth events` | `sudo systemctl restart rsyslog && ls -la /var/log/auth.log` |
 | `grep: /var/log/auth.log: binary file matches` | Use `grep -a` flag instead |
 
-## Screenshots & Diagrams
+## Testing with Two Machines
 
-Add screenshots to `assets/` folder demonstrating the IDS in action:
+The IDS is designed to monitor a **victim host** and detect attacks from an **attacker machine**. This section explains the setup.
 
-1. **IDS running** — `./run_all.sh` with both monitors starting
-2. **CRITICAL alerts** — `alerts.log` showing CRITICAL detections
-3. **Brute-force detection** — Multiple failed SSH attempts triggering alert
-4. **Suspicious process** — Detection of `bash -i` or `nc -h`
-5. **Network connection alert** — Outbound connection to external IP
-6. **Configuration file** — `config.yaml` showing tunable parameters
+### Setup Overview
 
-Create the folder and add images:
+```
+Attacker Machine                     Victim Machine (IDS)
+│                                    │
+├─ Sends failed SSH logins  ───────→ ├─ Receives SSH attempts
+└─ Runs suspicious commands ───────→ ├─ Logs to auth.log
+                                     └─ Generates alerts
+```
+
+### Machine 1: IDS Host (Victim)
+This is where the HIDS runs:
+- Install and run the IDS as described above
+- Note the IP address: `hostname -I`
+- Keep `./run_all.sh` running and monitoring
+
+### Machine 2: Attacker Host
+This sends attacks to the IDS host. Can be:
+- Your personal computer (macOS, Linux, Windows with SSH)
+- Another Ubuntu VM on the same network
+- Any system with SSH client installed
+
+### Test Scenario 1: Brute-Force Attack
+
+**On Attacker Machine:**
+```bash
+# Replace 192.168.1.100 with victim's IP and user@ with victim's username. Example: nur@192.168.64.3
+ssh user@192.168.1.100        # (enter wrong password 3+ times)
+ssh user@192.168.1.100        # (wrong password)
+ssh user@192.168.1.100        # (wrong password)
+```
+
+**Expected on Victim (IDS) machine:**
+```
+[WARNING] [auth] BRUTE-FORCE (per-IP): source=192.168.1.X 3 failures in 60s
+```
+
+### Test Scenario 2: Brute-Force on Sensitive User
+
+**On Attacker Machine:**
+```bash
+# Replace IP with victim's IP
+ssh root@192.168.1.100       # (wrong password 3+ times)
+ssh root@192.168.1.100       # (wrong password)
+ssh root@192.168.1.100       # (wrong password)
+```
+
+**Expected on Victim (IDS) machine:**
+```
+[CRITICAL] [auth] BRUTE-FORCE (per-user): user=root 3 failures in 300s
+```
+
+### Test Scenario 3: Successful Login After Failures
+
+**On Attacker Machine:**
+```bash
+# Try wrong password twice, then right password
+ssh nur@192.168.1.100        # (wrong)
+ssh nur@192.168.1.100        # (wrong)
+ssh nur@192.168.1.100        # (correct password - login succeeds)
+```
+
+**Expected on Victim (IDS) machine:**
+```
+[CRITICAL] [auth] POSSIBLE COMPROMISE: successful login after failures from source=192.168.1.X
+```
+
+### Test Scenario 4: Local Suspicious Process
+
+**On Victim Machine (where IDS runs):**
+```bash
+# While IDS is monitoring, run one of these in another terminal:
+bash -i                      # Reverse shell pattern
+nc -h                        # Netcat (blocklisted)
+```
+
+**Expected alert:**
+```
+[CRITICAL] [proc] SUSPICIOUS CMDLINE: matched /bash\s+-i/...
+[CRITICAL] [proc] BLOCKLISTED BINARY: name=nc...
+```
+
+### Viewing Results
+
+After tests, on Victim Machine:
 
 ```bash
-mkdir -p assets
-# Save screenshots in assets/ and reference with: ![Description](assets/filename.png)
+# View CRITICAL alerts only
+grep "CRITICAL" alerts.log
+
+# View all CRITICAL + WARNING
+tail -30 alerts.log | grep -E "CRITICAL|WARNING"
+
+# Count brute-force attempts by IP
+grep "BRUTE-FORCE" alerts.log | tail -10
 ```
+
+## Screenshots & Diagrams
+
+Screenshots:`assets/` 
+
+## Demo link
+
+
+
+## Feedback link
+
+
+
+## Pitch presentation
+
+
 
 ---
 
 **Author:** Nurkyz Sydykbekova  
-**Course:** Information Security — Final Project  
+**Course:** Information Security - Final Project  
 **Language:** Python 3.12  
 **License:** Academic Use Only
