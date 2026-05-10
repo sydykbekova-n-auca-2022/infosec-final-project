@@ -37,13 +37,4 @@ echo "Both monitors running. Showing alerts (Ctrl+C to stop everything)."
 echo "----"
 touch alerts.log
 
-ALERT_PATTERNS="BLOCKLISTED BINARY|
-                SUSTAINED HIGH CPU|
-                SUSTAINED HIGH MEMORY|
-                ROOT PROCESS WITH UNTRUSTED PARENT|
-                SUSPICIOUS CMDLINE|
-                BRUTE-FORCE|
-                POSSIBLE COMPROMISE|
-                SUSPICIOUS OUTBOUND CONNECTION"
-
-tail -f alerts.log | grep -E --line-buffered -i "$ALERT_PATTERNS"
+tail -f alerts.log

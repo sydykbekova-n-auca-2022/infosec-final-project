@@ -10,7 +10,7 @@
 alert_log: alerts.log
 
 # Console verbosity: DEBUG / INFO / WARNING / ERROR / CRITICAL
-console_level: WARNING
+console_level: DEBUG
 
 
 # ---------- Auth Monitor ----------
@@ -20,8 +20,8 @@ auth:
   log_path: /var/log/auth.log
 
   # Per-IP brute-force detection
-  ip_window_seconds: 60       # rolling window
-  ip_threshold: 3             # failures from one IP within window -> alert
+  ip_window_seconds: 30       # rolling window
+  ip_threshold: 1             # failures from one IP within window -> alert
 
   # Per-user brute-force detection (catches distributed attacks)
   user_window_seconds: 300    # 5 minutes
@@ -48,8 +48,8 @@ process:
 
   # Sustained-usage anomaly window
   resource_window_seconds: 15   # how long to track resource usage for anomaly detection
-  cpu_threshold_percent: 80      # process > this % CPU sustained -> alert
-  memory_threshold_mb: 500       # process > this MB RSS sustained -> alert
+  cpu_threshold_percent: 50      # process > this % CPU sustained -> alert
+  memory_threshold_mb: 300       # process > this MB RSS sustained -> alert
 
   # Process name blocklist (matched against proc.name())
   process_blocklist:

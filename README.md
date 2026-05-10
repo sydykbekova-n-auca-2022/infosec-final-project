@@ -41,6 +41,58 @@ This HIDS:
 - Writes alerts with timestamps and severity to `alerts.log`
 - Fully configurable via `config.yaml` — no code changes needed
 
+### Detection Coverage
+
+The system detects the following alert categories:
+- **BRUTE-FORCE (per-IP)** — repeated failed SSH login attempts from a single source.
+- **BRUTE-FORCE (per-user)** — repeated failed SSH login attempts targeting one username.
+- **POSSIBLE COMPROMISE** — a successful SSH login after recent failed attempts.
+- **BLOCKLISTED BINARY** — known attacker tools like `nc`, `nmap`, `hydra`, `hashcat`.
+- **SUSPICIOUS CMDLINE** — reverse-shell patterns such as `bash -i`, `/dev/tcp/`, `curl | sh`.
+- **ROOT PROCESS WITH UNTRUSTED PARENT** — a root-owned child process spawned by a nontrusted parent.
+- **SUSTAINED HIGH CPU / MEMORY** — a process using CPU or RAM above thresholds for a sustained window.
+- **SUSPICIOUS OUTBOUND CONNECTION** — an external high-port connection from shell or scripting processes.
+
+### How to trigger each detection
+
+Use these commands from the IDS host (`src/`):
+
+```bash
+# Blocklisted binary
+timeout 5 nc -l 9999
+
+# Suspicious command line
+bash -i
+exit
+
+# Root-process parent anomaly
+sudo bash -c 'sleep 60' &
+
+# Sustained high CPU
+yes > /dev/null &
+CPU_PID=$!
+sleep 40
+kill $CPU_PID
+
+# Suspicious outbound connection
+timeout 5 python3 -c "import socket; s=socket.socket(); s.connect(('8.8.8.8', 4444))" || true
+```
+
+For SSH brute-force and compromise tests, use either another machine or localhost:
+
+```bash
+# Per-IP brute-force (3 failed attempts)
+for i in {1..3}; do ssh -o ConnectTimeout=2 nur@localhost; done
+
+# Per-user brute-force for sensitive account
+for i in {1..3}; do ssh -o ConnectTimeout=2 root@localhost; done
+
+# Possible compromise: wrong password twice, then correct login
+ssh -o ConnectTimeout=2 nur@localhost  # wrong
+ssh -o ConnectTimeout=2 nur@localhost  # wrong
+ssh nur@localhost                      # correct
+```
+
 ## Architecture Overview
 
 ```mermaid
@@ -109,26 +161,30 @@ python3 -c "import psutil, yaml; print('✓ Success')"
 
 **Quick start (recommended):**
 ```bash
+cd src
 ./run_all.sh
 ```
-Starts both monitors and tails alerts. Press `Ctrl+C` to stop.
+Starts both monitors and tails `alerts.log`. Press `Ctrl+C` to stop.
 
 **Manual start (3 terminals):**
 
 Terminal 1:
 ```bash
+cd src
 source venv/bin/activate
 sudo venv/bin/python3 auth_monitor.py
 ```
 
 Terminal 2:
 ```bash
+cd src
 source venv/bin/activate
 python3 process_monitor.py
 ```
 
 Terminal 3:
 ```bash
+cd src
 tail -f alerts.log
 ```
 
@@ -246,30 +302,76 @@ nc -h                        # Netcat (blocklisted)
 
 ### Viewing Results
 
-After tests, on Victim Machine:
+After tests, on the IDS host run:
 
 ```bash
-# View CRITICAL alerts only
+cd src
+# Show every persisted alert
+tail -f alerts.log
+
+# Show only CRITICAL alerts
 grep "CRITICAL" alerts.log
 
-# View all CRITICAL + WARNING
-tail -30 alerts.log | grep -E "CRITICAL|WARNING"
+# Show only WARNING alerts
+grep "WARNING" alerts.log
 
-# Count brute-force attempts by IP
-grep "BRUTE-FORCE" alerts.log | tail -10
+# Show auth sensor alerts only
+grep "\[auth\]" alerts.log
+
+# Show process sensor alerts only
+grep "\[proc\]" alerts.log
+
+# Show all attack categories
+grep -E "BRUTE-FORCE|POSSIBLE COMPROMISE|BLOCKLISTED BINARY|SUSPICIOUS CMDLINE|ROOT PROCESS WITH UNTRUSTED PARENT|SUSTAINED HIGH CPU|SUSTAINED HIGH MEMORY|SUSPICIOUS OUTBOUND CONNECTION" alerts.log
+
+# Check SSH failure history
+sudo grep -a "Failed password" /var/log/auth.log | tail -20
+
+# Check successful SSH logins
+sudo grep -a "Accepted password" /var/log/auth.log | tail -20
 ```
+
+If `alerts.log` is empty, verify the monitors are running and check that `src/run_all.sh` started in the `src` directory.
 
 ## Screenshots & Diagrams
 
-Screenshots:`assets/` 
+### 1. IDS startup
+Both monitors launching via `./run_all.sh`.
 
-## Demo link
+![IDS startup](assets/screenshots/01_startup.png)
+
+### 2. Blocklisted binary detection
+Process monitor flagging an invocation of `nc` (netcat).
+
+![Blocklisted binary alert](assets/screenshots/02_blocklisted_binary.png)
+
+### 3. Suspicious command line
+Detection of `bash -i` — a common reverse-shell pattern — via regex match.
+
+![Suspicious cmdline alert](assets/screenshots/03_suspicious_cmdline.png)
+
+### 4. Sustained CPU anomaly
+Process exceeding the configured CPU threshold over the sampling window.
+
+![Sustained CPU alert](assets/screenshots/04_sustained_cpu.png)
+
+### 5. Sustained memory anomaly
+Process exceeding the configured memory threshold over the sampling window.
+
+![Sustained memory alert](assets/screenshots/05_sustained_memory.png)
+
+### 6. Alerts log
+Persistent, timestamped, severity-tagged alerts in `alerts.log`.
+
+![Alerts log](assets/screenshots/06_alerts_log.png)
+
+## Demo link 
 
 
 
 ## Feedback link
 
-
+https://youtu.be/eP0sqg6eYks?feature=shared
 
 ## Pitch presentation
 

@@ -210,8 +210,8 @@ class ProcessDetector:
             return
 
         try:
-            connections = proc.net_connections(kind='inet')
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+            connections = proc.connections(kind='inet')
+        except (psutil.AccessDenied, psutil.NoSuchProcess):
             return
 
         for conn in connections:
