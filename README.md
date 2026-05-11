@@ -365,10 +365,6 @@ Persistent, timestamped, severity-tagged alerts in `alerts.log`.
 
 ![Alerts log](assets/screenshots/06_alerts_log.png)
 
-## Demo link 
-
-
-
 ## Feedback link
 
 https://youtu.be/eP0sqg6eYks?feature=shared
