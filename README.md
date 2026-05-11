@@ -375,7 +375,7 @@ https://youtu.be/eP0sqg6eYks?feature=shared
 
 ## Pitch presentation
 
-
+https://docs.google.com/presentation/d/1aNmIHgr1lCBU6VCah0jmz-fvM5xHQj1Y3jQiNSjryrA/edit?usp=sharing
 
 ---
 
